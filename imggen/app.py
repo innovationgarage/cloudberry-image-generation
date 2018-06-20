@@ -7,68 +7,146 @@ from flask import Flask
 from flask import request
 
 app = Flask(__name__)
-volume_path = '/tmp' # Path for the images, set by the docker volume
+volume_path = '/tmp' if not __debug__ else 'test' # Path for the images, set by the docker volume
+expected_extension = ".img"
 
 @app.route('/')
 def empty():
-    return 'Hi there'
+    return json.dumps({"error":'Invalid request. Use imagename.img?parameter1=value&amp;parameter2=...'})
     
 def touch(path):
     with open(path, 'a'):
         os.utime(path, None)
 
 def debug(msg):
-    print(msg)
+    if __debug__:
+        print(msg)
 
 @app.route('/<path:imagefile>')
 def generate(imagefile):
     imagepath = os.path.join(volume_path,imagefile)
-    debug("Starting image generation for " + imagepath)
-
+    imagename_without_extension, imagename_extension = os.path.splitext(imagepath)
+    
+    # Json output
     result = {}
-    result['error'] = "Generation failed"
+
+    if not imagename_extension == expected_extension:
+        return json.dumps(result)
+
+    debug("Starting image generation for " + imagepath)
 
     if(not os.path.exists(imagepath)):
         result['error'] = "Image ("+imagepath+") not found"
         return json.dumps(result)
 
-    #url = request.args.get('OPENWISP_URL', '')
-    #uuid = request.args.get('OPENWISP_UUID', '')
-    #key = request.args.get('OPENWISP_KEY', '')
-
     mountingpoint = tempfile.mkdtemp()
     
-    # duplicate the imagefile to temp and mount
-    newimage = tempfile.mkstemp(suffix='.img')[1]
+    # Duplicate the imagefile to temp and mount
+    newimage = tempfile.mkstemp(suffix=expected_extension)[1]
 
     debug("Creating clone " + newimage)
     shutil.copyfile(imagepath,newimage)
 
     debug("Mounting image")
-    #subprocess.call(['sudo', 'mount', '-o loop,offset=1048576',newimage,mountingpoint])
-    p1 = subprocess.Popen(['mount', '-o','loop,offset=1048576',newimage,mountingpoint])
-    p1.wait()
+    offset = 0
+    try:
+        with open(imagename_without_extension+'.offset', 'r') as m:
+            offset=m.read().replace('\n', '')
+    except:
+        pass
     
-    # do the modifications
-    # TODO: put all the modifications in a configuration file
+    if not __debug__:
+        proc_mount = subprocess.Popen(['mount', '-o','loop,offset='+offset,newimage,mountingpoint])
+        proc_mount.wait()
+    
+    # Do the modifications
     debug("Modifying image")
-    touch(os.path.join(mountingpoint,"hello_there"))
+    touch(os.path.join(mountingpoint,"modified")) # Just a dumb flag
+    update_image(imagename_without_extension,mountingpoint, \
+        {"OPENWISP_URL":"url", "OPENWISP_UUID":"uuid", "OPENWISP_KEY":"key", } if __debug__ else request.args)
 
-    # close image
+    # Close image
     debug("Unmounting image")
-    #subprocess.call(['sudo', 'umount',mountingpoint])
-    subprocess.call(['umount',mountingpoint])
+    if not __debug__:
+        proc_umount = subprocess.Popen(['umount',mountingpoint])
+        proc_umount.wait()
 
-    # move image to destination
-    # TODO: find new name
-    newimagename = "generated.img"
-    shutil.move(newimage,os.path.join(volume_path,newimagename))
+    # Move image to destination
+    newimagename = "generated" + expected_extension
+    while os.path.exists(newimagename):
+        newimagename = next(tempfile._get_candidate_names()) + expected_extension
+    shutil.copy(newimage,os.path.join(volume_path,newimagename))
 
-    result['error'] = ""
-    result['image'] = newimagename
+    # TODO: Clean old images
+
+    # Output
+    result['generated'] = newimagename
     return json.dumps(result)
 
-#generate("newimage.img")
+def update_image(source_image, destination_path, template_parameters):
+    """
+    Updates a mounted image.
+
+    Parameters
+    ----------
+    source_image : str
+        Path to the image
+    destination_path : str
+        Path to the destination (mount point)
+    template_parameters : dict
+        Dictionary with the template variables to be replaced in the .template files from the source
+
+    Returns
+    -------
+    int
+        Total number of injected files
+
+    """
+    print("Updating image:" + source_image)
+
+    files_injected = 0
+    template_ext = ".template"
+
+    #imagename_without_extension, imagename_extension = os.path.splitext(source_imagename)
+
+    for path, directories, files in os.walk(source_image):
+        for f in files:
+
+            destination_filename = f
+
+            destination_relative_path = os.path.join(destination_path,path.split(source_image,2)[1].lstrip('/\\')).lstrip('/\\')
+            print("* Source path: '" + path + "' filename: '" + f + "' ---> " + os.path.join(destination_path,destination_relative_path,destination_filename))
+            
+            source_path_filename = os.path.join(path, f)
+            destination_path_and_filename = os.path.join(destination_path,destination_relative_path,destination_filename)
+
+            # Prepare destination directory tree
+            tmp_path = os.path.join(destination_path,destination_relative_path)
+            os.makedirs(tmp_path, exist_ok=True)
+
+            if(f.endswith(template_ext)):
+                print ('Processing .template: %s' % os.path.join(path, destination_filename))
+
+                # Read in the file
+                with open(source_path_filename, 'r') as file :
+                    filedata = file.read()
+
+                    try:
+                        output = str(filedata) % template_parameters
+                    except:
+                        output = filedata
+
+                    # Write the file out again
+                    with open(os.path.join(destination_path,destination_relative_path,f[:-len(template_ext)]), 'w') as file:
+                        file.write(output)
+                        files_injected += 1
+
+            else:
+                print ('Copying: %s' % source_path_filename)
+                shutil.copy(source_path_filename,destination_path_and_filename)
+                files_injected += 1
+
+    return files_injected
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')

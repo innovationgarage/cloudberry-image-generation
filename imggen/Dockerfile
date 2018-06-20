@@ -1,7 +1,9 @@
 #docker build -t imggen:latest imggen
 #docker run -d -p 5000:5000 imggen
-#docker run -d -p 5000:5000 -v "/c/Users/erwin/Desktop/Delete/docker/test:/tmp/" imggen
-#docker run -d -p 5000:5000 -v "/c/Users/erwin/Desktop/Delete/docker/test:/tmp/" --privileged imggen
+#docker run -d -p 5000:5000 -v "/d/Github/cloudberry-image-generation/imggen/test:/tmp/" --privileged imggen
+
+# docker build -t imgcreator .\imgcreator\
+# docker run -v "/c/Users/erwin/Desktop/Delete/docker/test:/tmp/"  -e image=openwrt_For_orangepiR1_V0_2.img imggen
 
 FROM ubuntu:latest
 MAINTAINER Erwin
