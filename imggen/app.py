@@ -6,8 +6,9 @@ import json
 from flask import Flask
 from flask import request
 
+# Constants
 app = Flask(__name__)
-volume_path = '/tmp' if not __debug__ else 'test' # Path for the images, set by the docker volume
+volume_path = '/tmp' #if not debug else 'test' # Path for the images, set by the docker volume
 expected_extension = ".img"
 
 @app.route('/')
@@ -19,8 +20,7 @@ def touch(path):
         os.utime(path, None)
 
 def debug(msg):
-    if __debug__:
-        print(msg)
+    print(msg)
 
 @app.route('/<path:imagefile>')
 def generate(imagefile):
@@ -47,40 +47,49 @@ def generate(imagefile):
     debug("Creating clone " + newimage)
     shutil.copyfile(imagepath,newimage)
 
-    debug("Mounting image")
     offset = 0
     try:
         with open(imagename_without_extension+'.offset', 'r') as m:
             offset=m.read().replace('\n', '')
-    except:
+    except expression as identifier:
         pass
     
-    if not __debug__:
-        proc_mount = subprocess.Popen(['mount', '-o','loop,offset='+offset,newimage,mountingpoint])
-        proc_mount.wait()
+    print ("Mounting image " + newimage + " (offset:"+offset+") to " + mountingpoint + " ...")
+    proc_mount = subprocess.Popen(['mount', '-o','loop,offset='+offset,newimage,mountingpoint])
+    proc_mount.wait()
+    print ("... done.")
     
     # Do the modifications
     debug("Modifying image")
     touch(os.path.join(mountingpoint,"modified")) # Just a dumb flag
-    update_image(imagename_without_extension,mountingpoint, \
-        {"OPENWISP_URL":"url", "OPENWISP_UUID":"uuid", "OPENWISP_KEY":"key", } if __debug__ else request.args)
+
+    args = {"OPENWISP_URL":"url", "OPENWISP_UUID":"uuid", "OPENWISP_KEY":"key", }
+    try:
+        args = request.args
+    except:
+        pass
+
+    update_image(imagename_without_extension,mountingpoint, args)
 
     # Close image
-    debug("Unmounting image")
-    if not __debug__:
-        proc_umount = subprocess.Popen(['umount',mountingpoint])
-        proc_umount.wait()
+    print ("Unmounting image " + mountingpoint + " ...")
+    proc_umount = subprocess.Popen(['umount',mountingpoint])
+    proc_umount.wait()
+    print ("... done.")
 
     # Move image to destination
-    newimagename = "generated" + expected_extension
-    while os.path.exists(newimagename):
-        newimagename = next(tempfile._get_candidate_names()) + expected_extension
-    shutil.copy(newimage,os.path.join(volume_path,newimagename))
+    imagename_new = "generated" + expected_extension
+    while os.path.exists(os.path.join(volume_path,imagename_new)):
+        imagename_new = next(tempfile._get_candidate_names()) + expected_extension
+    
+    shutil.copy(newimage,os.path.join(volume_path,imagename_new))
 
     # TODO: Clean old images
 
     # Output
-    result['generated'] = newimagename
+    result['generated'] = imagename_new
+    print ("Done: " + imagename_new)
+
     return json.dumps(result)
 
 def update_image(source_image, destination_path, template_parameters):
@@ -114,11 +123,16 @@ def update_image(source_image, destination_path, template_parameters):
 
             destination_filename = f
 
-            destination_relative_path = os.path.join(destination_path,path.split(source_image,2)[1].lstrip('/\\')).lstrip('/\\')
-            print("* Source path: '" + path + "' filename: '" + f + "' ---> " + os.path.join(destination_path,destination_relative_path,destination_filename))
-            
+            destination_relative_path = os.path.join(destination_path,path.split(source_image,2)[1].lstrip('/\\'))
+            print("* Source path: '" + path + "' filename: '" + f + "' ---> " + os.path.join(destination_relative_path,destination_filename))
+            # print("path" + path)
+            # print("source_image: " + source_image)
+            # print("destination_path: " + destination_path)
+            # print("destination_relative_path: " + destination_relative_path)
+            # print("destination_filename: " + destination_filename)
+
             source_path_filename = os.path.join(path, f)
-            destination_path_and_filename = os.path.join(destination_path,destination_relative_path,destination_filename)
+            destination_path_and_filename = os.path.join(destination_relative_path,destination_filename)
 
             # Prepare destination directory tree
             tmp_path = os.path.join(destination_path,destination_relative_path)
@@ -147,6 +161,8 @@ def update_image(source_image, destination_path, template_parameters):
                 files_injected += 1
 
     return files_injected
+
+generate("newimage.img")
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')

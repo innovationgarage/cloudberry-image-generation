@@ -5,7 +5,8 @@
 # docker build -t imgcreator .\imgcreator\
 # docker run -v "/c/Users/erwin/Desktop/Delete/docker/test:/tmp/"  -e image=openwrt_For_orangepiR1_V0_2.img imggen
 
-FROM ubuntu:latest
+#FROM ubuntu:latest
+FROM holbertonschool/ubuntu-1404-python3
 MAINTAINER Erwin
 
 RUN apt-get update -y
@@ -14,6 +15,7 @@ RUN apt-get install -y sudo python-pip python-dev build-essential
 
 COPY . /app
 WORKDIR /app
-RUN pip install -r requirements.txt
-ENTRYPOINT ["python"]
+
+# RUN pip install -r requirements.txt
+ENTRYPOINT ["python3"]
 CMD ["app.py"]
