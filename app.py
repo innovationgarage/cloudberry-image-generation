@@ -8,7 +8,9 @@ from flask import request
 
 # Constants
 app = Flask(__name__)
-volume_path = '/tmp' #if not debug else 'test' # Path for the images, set by the docker volume
+input_path = 'images' # Input images
+output_path = 'output' # Output images
+volume_path = '/workdir' 
 expected_extension = ".img"
 
 @app.route('/')
@@ -24,7 +26,7 @@ def debug(msg):
 
 @app.route('/<path:imagefile>')
 def generate(imagefile):
-    imagepath = os.path.join(volume_path,imagefile)
+    imagepath = os.path.join(volume_path,input_path,imagefile)
     imagename_without_extension, imagename_extension = os.path.splitext(imagepath)
     
     # Json output
@@ -51,7 +53,7 @@ def generate(imagefile):
     try:
         with open(imagename_without_extension+'.offset', 'r') as m:
             offset=m.read().replace('\n', '')
-    except expression as identifier:
+    except:
         pass
     
     print ("Mounting image " + newimage + " (offset:"+offset+") to " + mountingpoint + " ...")
@@ -78,16 +80,17 @@ def generate(imagefile):
     print ("... done.")
 
     # Move image to destination
-    imagename_new = "generated" + expected_extension
-    while os.path.exists(os.path.join(volume_path,imagename_new)):
+    imagename_new = "image" + expected_extension
+    while os.path.exists(os.path.join(volume_path,output_path,imagename_new)):
         imagename_new = next(tempfile._get_candidate_names()) + expected_extension
     
-    shutil.copy(newimage,os.path.join(volume_path,imagename_new))
+    shutil.copy(newimage,os.path.join(volume_path,output_path,imagename_new))
 
     # TODO: Clean old images
 
     # Output
-    result['generated'] = imagename_new
+    result['output_path'] = output_path
+    result['output_file'] = imagename_new
     print ("Done: " + imagename_new)
 
     return json.dumps(result)
