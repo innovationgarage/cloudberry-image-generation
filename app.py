@@ -1,4 +1,5 @@
 import os
+import stat
 import subprocess
 import shutil
 import tempfile
@@ -81,9 +82,12 @@ def generate(imagefile):
     imagename_new = "generated" + expected_extension
     while os.path.exists(os.path.join(volume_path,imagename_new)):
         imagename_new = next(tempfile._get_candidate_names()) + expected_extension
-    
-    shutil.copy(newimage,os.path.join(volume_path,imagename_new))
 
+    imagepath_new = os.path.join(volume_path,imagename_new)
+    shutil.move(newimage,imagepath_new)
+    os.chmod(imagepath_new, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+    
     # TODO: Clean old images
 
     # Output
