@@ -128,9 +128,7 @@ def update_image(source_image, destination_path, template_parameters):
     files_injected = 0
     template_ext = ".template"
 
-    #imagename_without_extension, imagename_extension = os.path.splitext(source_imagename)
-
-    for path, directories, files in os.walk(source_image):
+    for path, _, files in os.walk(source_image):
         for f in files:
 
             destination_filename = f
