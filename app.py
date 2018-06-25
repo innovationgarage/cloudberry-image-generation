@@ -1,8 +1,10 @@
 import os
+import stat
 import subprocess
 import shutil
 import tempfile
 import json
+import hashlib
 from flask import Flask
 from flask import request
 
@@ -21,7 +23,11 @@ def empty():
         if file.endswith(expected_extension):
             images.append(file)
     return json.dumps({"images": images})
-    
+
+def get_image_filename(image, params, output_prefix = '', output_postfix = ''):
+    return output_prefix + hashlib.sha224((image + 
+        json.dumps(params)).encode('utf8')).hexdigest() + output_postfix
+
 def touch(path):
     with open(path, 'a'):
         os.utime(path, None)
@@ -42,52 +48,55 @@ def generate(imagefile):
         result['error'] = "Image ("+imagepath+") not found"
         return json.dumps(result)
 
-    mountingpoint = tempfile.mkdtemp()
-    
-    # Duplicate the imagefile to temp and mount
-    newimage = tempfile.mkstemp(suffix=expected_extension)[1]
-
-    debug("Creating clone " + newimage)
-    shutil.copyfile(imagepath,newimage)
-
-    offset = 0
-    try:
-        with open(imagename_without_extension+'.offset', 'r') as m:
-            offset=m.read().replace('\n', '')
-    except:
-        pass
-    
-    print ("Mounting image " + newimage + " (offset:"+offset+") to " + mountingpoint + " ...")
-    proc_mount = subprocess.Popen(['mount', '-o','loop,offset='+offset,newimage,mountingpoint])
-    proc_mount.wait()
-    print ("... done.")
-    
-    # Do the modifications
-    debug("Modifying image")
-    touch(os.path.join(mountingpoint,"modified")) # Just a dumb flag
-
     args = {"OPENWISP_URL":"url", "OPENWISP_UUID":"uuid", "OPENWISP_KEY":"key", }
     try:
         args = request.args
     except:
         pass
 
-    update_image(imagename_without_extension,mountingpoint, args)
+    # Check if the image was generated in the past
+    imagename_new = get_image_filename(imagefile, args, 
+        os.path.basename(imagename_without_extension) + "-", expected_extension)
 
-    # Close image
-    print ("Unmounting image " + mountingpoint + " ...")
-    proc_umount = subprocess.Popen(['umount',mountingpoint])
-    proc_umount.wait()
-    print ("... done.")
+    if not os.path.exists(os.path.join(volume_path,output_path,imagename_new)):
+        mountingpoint = tempfile.mkdtemp()
+        
+        # Duplicate the imagefile to temp and mount
+        newimage = tempfile.mkstemp(suffix=expected_extension)[1]
 
-    # Move image to destination
-    imagename_new = "image" + expected_extension
-    while os.path.exists(os.path.join(volume_path,output_path,imagename_new)):
-        imagename_new = next(tempfile._get_candidate_names()) + expected_extension
-    
-    shutil.copy(newimage,os.path.join(volume_path,output_path,imagename_new))
+        debug("Creating clone " + newimage)
+        shutil.copyfile(imagepath,newimage)
 
-    # TODO: Clean old images
+        offset = 0
+        try:
+            with open(imagename_without_extension+'.offset', 'r') as m:
+                offset=m.read().replace('\n', '')
+        except:
+            pass
+        
+        print ("Mounting image " + newimage + " (offset:"+offset+") to " + mountingpoint + " ...")
+        proc_mount = subprocess.Popen(['mount', '-o','loop,offset='+offset,newimage,mountingpoint])
+        proc_mount.wait()
+        print ("... done.")
+        
+        # Do the modifications
+        debug("Modifying image")
+        touch(os.path.join(mountingpoint,"modified")) # Just a dumb flag
+
+        update_image(imagename_without_extension,mountingpoint, args)
+
+        # Close image
+        print ("Unmounting image " + mountingpoint + " ...")
+        proc_umount = subprocess.Popen(['umount',mountingpoint])
+        proc_umount.wait()
+        print ("... done.")
+
+        # Move image to destination
+        imagepath_new = os.path.join(volume_path,output_path,imagename_new)
+        shutil.move(newimage,imagepath_new)
+        os.chmod(imagepath_new, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
+
+        # TODO: Clean old images
 
     # Output
     result['output_path'] = output_path
@@ -166,7 +175,7 @@ def update_image(source_image, destination_path, template_parameters):
 
     return files_injected
 
-#generate("newimage.img")
+generate("newimage.img")
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')
