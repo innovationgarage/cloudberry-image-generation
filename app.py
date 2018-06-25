@@ -17,7 +17,6 @@ expected_extension = ".img"
 
 @app.route('/')
 def empty():
-    #return json.dumps({"error":'Invalid request. Use imagename.img?parameter1=value&amp;parameter2=...'})
     images = []
     for file in os.listdir(os.path.join(volume_path,input_path)):
         if file.endswith(expected_extension):
@@ -175,7 +174,7 @@ def update_image(source_image, destination_path, template_parameters):
 
     return files_injected
 
-generate("newimage.img")
+#generate("newimage.img")
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')
